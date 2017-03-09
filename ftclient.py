@@ -14,7 +14,7 @@ def BindSocket(serverSocket, port):
 #It takes a socket object as an argument.
 def ListenSocket(serverSocket):
 	serverSocket.listen(1)
-	print 'Server is listening on port #: %d' %clientServerPort
+	print 'Data port open on port #: %d' %clientServerPort
 	#print 'hostname: %s' %socket.getfqdn()
 
 '''
@@ -85,6 +85,14 @@ def SendGetFileCommand(sock, message):
 		print >>sys.stderr, 'closing socket'
 		sock.close()
 
+#this function is used to establish a connection with a client
+#It takes a socket object as an argument
+def ConnectToClient(socket):
+	connectionSocket, addr = socket.accept()
+	print 'Connected with ' + addr[0] + ':' + str(addr[1])
+	print '\n'
+	return connectionSocket
+
 # Create a TCP/IP socket
 sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
@@ -110,18 +118,6 @@ if len(sys.argv) == 5:
 	command = sys.argv[3]
 	dataPort = sys.argv[4]
 
-	#create a socket
-	serverSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-
-	#convert the data port to an int to open the data port listening socket
-	clientServerPort = int(sys.argv[4])
-
-	#bind the socket
-	BindSocket(serverSocket, clientServerPort)
-
-	#Start listening on socket	
-	ListenSocket(serverSocket)
-
 	#get the name of the client server to send for the data port connection
 	clientHost = socket.gethostname()
 
@@ -129,18 +125,17 @@ if len(sys.argv) == 5:
 	message = command + ':' + dataPort + ':' + clientHost + ':'
 
 	try:
-	    sock.sendall(message)
-	 	
-	    #while amount_received < amount_expected:
-	     #   data = sock.recv(16)
-	     #   amount_received += len(data)
-	    response = sock.recv(500)
-	    print 'Message returned from server: %s' %response
-	
+		sock.sendall(message)
+			 	
+		response = sock.recv(500)
+		if response != '1':
+			print '%s' %response
+		else: 
+			print 'Valid command recieved'
+			
 	finally:
 		print >>sys.stderr, 'closing socket'
 		sock.close()
-		serverSocket.close()
 elif len(sys.argv) == 6:
 	#get arguments into variables
 	hostName = sys.argv[1]
@@ -156,49 +151,72 @@ else:
 	print "IVALID ARGUMENTS FORMAT... <SERVER_HOST> <SERVER_PORT> <COMMAND> <[FILENAME]> <DATAPORT>"
 	exit()
 
-'''
-#check the type of command entered for the third command line argument
-if validListCommand == True:
-	print 'listing directories...'
-	dataPort = int(sys.argv[4])
+#DATA PORT CODE
+#create a socket for data port
+serverSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
-	#create a socket
-	serverSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+#convert the data port to an int to open the data port listening socket
+clientServerPort = int(dataPort)
 
-	#bind the socket
-	BindSocket(serverSocket, dataPort)
+#bind the socket for data port
+BindSocket(serverSocket, clientServerPort)
 
-	#Start listening on socket	
-	ListenSocket(serverSocket)
+#Start listening on socket for data port
+ListenSocket(serverSocket)
 
-	print 'hostname: %s' %socket.getfqdn()
-	host = socket.getfqdn()
-	message = arguments + host
+try:
+	while True:
+		#connect to through data port
+		connection = ConnectToClient(serverSocket)
+		
+		try:
+			while True:
+				#receive message from client
+				clientMessage = ReceiveMessage(connection)
 
-	SendListCommand(sock, message)
-
-	#close the data connection
+				if clientMessage:
+					#write response to file or display
+					print '%s' %clientMessage
+					break
+				else:
+					print >>sys.stderr, 'no more data from client'
+					connection.close()
+					break
+		except:
+			connection.close()
+			serverSocket.close()
+except:
+	connection.close()
 	serverSocket.close()
-	#do more in here
-elif validFileRequestCommand == True:
-	print 'requesting file...'
-	fileName = sys.argv[4]
-	dataPort = sys.argv[5]
+	print '\n'
+	print 'Goodbye!\n'
 
-	#create a socket
-	serverSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+ 
+serverSocket.close()
 
-	#bind the socket
-	BindSocket(serverSocket, dataPort)
-
-	#Start listening on socket	
-	ListenSocket(serverSocket)
-
-	SendGetFileCommand(sock, arguments)
-
-	#close the data connection
-	serverSocket.close()
-else:
-	print 'INVALID REQUEST ARGUMENT!'
-	exit()	
 '''
+	try:
+		while True:
+			#connect to server through data port
+			connection = ConnectToClient(serverSocket)
+
+			#get the name of the client server to send for the data port connection
+			clientHost = socket.gethostname()
+
+			#concantenate arguments into message string
+			message = command + ':' + dataPort + ':' + clientHost + ':'
+
+			try:
+			    sock.sendall(message)
+			 	
+			    response = sock.recv(500)
+			    print 'Message returned from server: %s' %response
+			
+			finally:
+				print >>sys.stderr, 'closing socket'
+				sock.close()
+	finally:
+		connection.close()
+		serverSocket.close()
+'''
+

@@ -6,6 +6,7 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <signal.h>
+#include <netdb.h>
 
 void sigint_handler(int sig)
 {
@@ -162,12 +163,47 @@ int sendMessage(int *sockFD, int charsWritten, char *message){
 	return charsWritten;
 }
 
+/*
+* This function checks that the entire
+* message was sent by comparing the charsWritten
+* variable to the message length.
+*/
+void checkForCompletion(int charsWritten, char *message){
+	if (charsWritten < strlen(message)) {
+			fprintf(stderr, "CLIENT: WARNING: Not all data written to socket!\n");
+		}
+}
+
+/*
+* This function sets up and opens
+* the client socket.
+*/
+void setUpSocket(int *sockFD){
+	// Set up the socket
+	*sockFD = socket(AF_INET, SOCK_STREAM, 0); // Create the socket
+	if (sockFD < 0) {
+		fprintf(stderr, "CLIENT: ERROR opening socket\n");
+	}
+}
+
+/*
+* This function connects the socket to the server
+* address struct.
+*/
+void connectToServer(int *sockFD, struct sockaddr_in serverAddress){
+	if (connect(*sockFD, (struct sockaddr*)&serverAddress, sizeof(serverAddress)) < 0) { // Connect socket to address
+		fprintf(stderr, "CLIENT: ERROR connectiong\n");
+	}
+}
+
 int main(int argc, char *argv[])
 {
 	int listenSocketFD;
+	int dataSocketFD;
 	int establishedConnectionFD; 
 	int portNumber;
 	int charsRead;
+	int charsWritten;
 	int validCommandRecieved;
 	socklen_t sizeOfClientInfo;
 	char buffer[256];
@@ -177,7 +213,12 @@ int main(int argc, char *argv[])
 	char *filename;										//string holds the name of a requested file
 	char *dataPortHost;									//string to hold the name of the client's server data port
 	int dataPortNumber;									//holds the port number of the client's server data port
-	struct sockaddr_in serverAddress, clientAddress;
+	struct sockaddr_in serverAddress, clientAddress;	//control connection structs
+
+	//data connection structs
+	struct sockaddr_in dataPortAddress;
+	struct hostent* serverHostInfo;
+
 	void sigint_handler(int sig); /* prototype */
 	struct sigaction sa;
 
@@ -242,12 +283,13 @@ int main(int argc, char *argv[])
 		if (validCommandRecieved == 1){
 			//parse out the other arguments from the message
 			parseGetListTokens(buffer, &dataPortNumber, &dataPortHost);
-			response = "Valid command recieved\n";
+			printf("data port is: %d\n", dataPortNumber);
+			response = "1\n";
 		}
 		else if (validCommandRecieved == 2){
 			//parse out the other arguments from the message
 			parseGetFileTokens(buffer, &dataPortNumber, &filename, &dataPortHost);
-			response = "Valid command recieved\n";
+			response = "1\n";
 		}
 		else{
 			response = "INVALID COMMAND\n";
@@ -260,9 +302,45 @@ int main(int argc, char *argv[])
 		if (charsRead < 0) {
 			printf("ERROR writing to socket\n");
 		}
-		
-		close(establishedConnectionFD); // Close the existing socket which is connected to the client
+		else{
+			break;
+		}
 	}
+
+	close(establishedConnectionFD); // Close the existing socket which is connected to the client
+
+	//wait a moment for the client to begin listening on the data port
+	//sleep(10);
+
+	// Set up the server address struct
+	memset((char*)&dataPortAddress, '\0', sizeof(dataPortAddress)); 	// Clear out the address struct
+	dataPortAddress.sin_family = AF_INET; 							// Create a network-capable socket
+	dataPortAddress.sin_port = htons(dataPortNumber); 				// Store the port number
+	//serverHostInfo = gethostbyname(dataPortHost);						            //ip is localhost - WILL HAVE TO CHANGE!
+	serverHostInfo = gethostbyname("localhost");						            //ip is localhost - WILL HAVE TO CHANGE!
+	if (serverHostInfo == NULL) { 
+		//DO SOMETHING HERE IF CONNECTION FAILS?
+		fprintf(stderr, "CLIENT: ERROR, no such host\n"); 
+	}
+	memcpy((char*)&dataPortAddress.sin_addr.s_addr, (char*)serverHostInfo->h_addr, serverHostInfo->h_length); // Copy in the address
+
+	//set up data port socket
+	setUpSocket(&dataSocketFD);
+
+	printf("connecting to data port...\n");
+
+	// Connect to client through data port
+	connectToServer(&dataSocketFD, dataPortAddress);
+
+	response = "I am the client and I got your message!\n";
+
+	//send message to server
+	charsWritten = sendMessage(&dataSocketFD, charsWritten, response);
+
+	//check that charsWritten == message length
+	checkForCompletion(charsWritten, response);
+
+	close(dataSocketFD);	//close data connection
 
 	close(listenSocketFD); // Close the listening socket
 	
