@@ -17,6 +17,12 @@ def ListenSocket(serverSocket):
 	print 'Data port open on port #: %d' %clientServerPort
 	#print 'hostname: %s' %socket.getfqdn()
 
+#this function is used to receive messages from the client
+#It takes a connection object as an argument. 
+def ReceiveMessage(connectionSocket):
+	message = connectionSocket.recv(1024)
+	return message
+
 '''
 This functions examines the third command line argument 
 to see if it is a "-l" list command. 
@@ -167,6 +173,7 @@ ListenSocket(serverSocket)
 try:
 	while True:
 		#connect to through data port
+		print 'waiting for client to connect...'
 		connection = ConnectToClient(serverSocket)
 		
 		try:
@@ -185,6 +192,7 @@ try:
 		except:
 			connection.close()
 			serverSocket.close()
+		break		
 except:
 	connection.close()
 	serverSocket.close()

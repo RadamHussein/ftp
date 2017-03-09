@@ -7,6 +7,8 @@
 #include <netinet/in.h>
 #include <signal.h>
 #include <netdb.h>
+#include <dirent.h> 
+
 
 void sigint_handler(int sig)
 {
@@ -208,6 +210,7 @@ int main(int argc, char *argv[])
 	socklen_t sizeOfClientInfo;
 	char buffer[256];
 	char temp[256];										//string to hold copy of buffer
+	char dataBuffer[256];									//string to hold response sent through the data connection
 	char *response;
 	char *controlConnectionCommand;
 	char *filename;										//string holds the name of a requested file
@@ -218,6 +221,11 @@ int main(int argc, char *argv[])
 	//data connection structs
 	struct sockaddr_in dataPortAddress;
 	struct hostent* serverHostInfo;
+
+	//set up directory struct
+	DIR *d;
+	struct dirent *dir;
+	d = opendir(".");
 
 	void sigint_handler(int sig); /* prototype */
 	struct sigaction sa;
@@ -280,18 +288,33 @@ int main(int argc, char *argv[])
 		validCommandRecieved = isValidCommand(controlConnectionCommand);
 
 		//determine the type of response based on the request
-		if (validCommandRecieved == 1){
+		if (validCommandRecieved == 1){							//valid -l command
 			//parse out the other arguments from the message
 			parseGetListTokens(buffer, &dataPortNumber, &dataPortHost);
 			printf("data port is: %d\n", dataPortNumber);
 			response = "1\n";
+
+			char listItem[256];
+			char tempBuffer[256];
+			//get contents of directory
+			if (d){
+				while ((dir = readdir(d)) != NULL){
+					printf("%s\n", dir->d_name);
+					memset(listItem, '\0', sizeof(listItem));
+					memset(tempBuffer, '\0', sizeof(tempBuffer));
+					memcpy(tempBuffer, dataBuffer, strlen(dataBuffer)+1);
+					memcpy(listItem, dir->d_name, strlen(dir->d_name)+1);
+					sprintf(dataBuffer, "%s\n%s", tempBuffer, listItem);
+				}
+				closedir(d);
+			}
 		}
-		else if (validCommandRecieved == 2){
+		else if (validCommandRecieved == 2){					//valid -g command
 			//parse out the other arguments from the message
 			parseGetFileTokens(buffer, &dataPortNumber, &filename, &dataPortHost);
 			response = "1\n";
-		}
-		else{
+		}	
+		else{													//invalid command
 			response = "INVALID COMMAND\n";
 		}
 
@@ -335,7 +358,7 @@ int main(int argc, char *argv[])
 	response = "I am the client and I got your message!\n";
 
 	//send message to server
-	charsWritten = sendMessage(&dataSocketFD, charsWritten, response);
+	charsWritten = sendMessage(&dataSocketFD, charsWritten, dataBuffer);
 
 	//check that charsWritten == message length
 	checkForCompletion(charsWritten, response);
