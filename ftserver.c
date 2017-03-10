@@ -84,7 +84,7 @@ void parseGetListTokens(char *message, int *portNumber, char **host){
 * out of the string sent by the client. It is 
 * called when the client has sent a -g command.
 *********************************************/
-void parseGetFileTokens(char *message, int *portNumber, char **file, char **host){
+void parseGetFileTokens(char *message, char **file, int *portNumber, char **host){
 	printf("after parsing command, message contains: %s\n", message);
 	char *delim = ":";
 	char *token;
@@ -93,15 +93,15 @@ void parseGetFileTokens(char *message, int *portNumber, char **file, char **host
 	token = strtok(message, delim);
 	printf("first token: %s\n", token);
 
+	//get file name into a variable
+	parseToken(&token, delim);
+	*file = token;
+
 	//get data port number into a variable
 	parseToken(&token, delim);
 
 	//convert port number string to integer
 	*portNumber = atoi(token);
-
-	//get file name into a variable
-	parseToken(&token, delim);
-	*file = token;
 
 	//get hostname into a variable
 	parseToken(&token, delim);
@@ -207,10 +207,14 @@ int main(int argc, char *argv[])
 	int charsRead;
 	int charsWritten;
 	int validCommandRecieved;
+	int textFileSize;						//size of the open text file
+	FILE *textFP;							//pointer to text file
 	socklen_t sizeOfClientInfo;
 	char buffer[256];
 	char temp[256];										//string to hold copy of buffer
-	char dataBuffer[256];									//string to hold response sent through the data connection
+	char dataBuffer[256];						//string to hold response sent through the data connection
+	char cwd[100];										//holds the current working directory
+	char filepath[100];
 	char *response;
 	char *controlConnectionCommand;
 	char *filename;										//string holds the name of a requested file
@@ -294,8 +298,8 @@ int main(int argc, char *argv[])
 			printf("data port is: %d\n", dataPortNumber);
 			response = "1\n";
 
-			char listItem[256];
-			char tempBuffer[256];
+			char listItem[256];							//will hold the current list item
+			char tempBuffer[256];						//will hold the last contents of dataBuffer
 			//get contents of directory
 			if (d){
 				while ((dir = readdir(d)) != NULL){
@@ -311,8 +315,40 @@ int main(int argc, char *argv[])
 		}
 		else if (validCommandRecieved == 2){					//valid -g command
 			//parse out the other arguments from the message
-			parseGetFileTokens(buffer, &dataPortNumber, &filename, &dataPortHost);
-			response = "1\n";
+			parseGetFileTokens(buffer, &filename, &dataPortNumber, &dataPortHost);
+			response = "1\n";				//okay response
+
+			getcwd(cwd, sizeof(cwd));
+			printf("current working directory is: %s\n", cwd);
+
+			sprintf(filepath, ".%s/%s", cwd, filename);
+
+			printf("full file path: %s\n", filepath);
+
+			//open file for reading
+			textFP = fopen(filename, "r");
+
+			//check that the file opened or exists
+			if (textFP == NULL){
+				response = "FILE NOT FOUND\n";
+			}
+			else{
+				//get file size
+				//fseek(textFP, 0, SEEK_END);
+				//textFileSize = ftell(textFP);
+				//fseek(textFP, 0, SEEK_SET);
+
+				//create an array large enough to hold the file and fill it with 0's
+				//char dataBuffer[textFileSize];
+				memset(dataBuffer, 0, sizeof(dataBuffer));
+
+				//read the file into the the buffer array
+				fread(dataBuffer, sizeof(dataBuffer), 1, textFP);
+
+				fclose(textFP);
+				response = "1\n";	//okay response
+			}
+			
 		}	
 		else{													//invalid command
 			response = "INVALID COMMAND\n";
@@ -339,8 +375,8 @@ int main(int argc, char *argv[])
 	memset((char*)&dataPortAddress, '\0', sizeof(dataPortAddress)); 	// Clear out the address struct
 	dataPortAddress.sin_family = AF_INET; 							// Create a network-capable socket
 	dataPortAddress.sin_port = htons(dataPortNumber); 				// Store the port number
-	//serverHostInfo = gethostbyname(dataPortHost);						            //ip is localhost - WILL HAVE TO CHANGE!
-	serverHostInfo = gethostbyname("localhost");						            //ip is localhost - WILL HAVE TO CHANGE!
+	serverHostInfo = gethostbyname(dataPortHost);						            //ip is localhost - WILL HAVE TO CHANGE!
+	//serverHostInfo = gethostbyname("localhost");						            //ip is localhost - WILL HAVE TO CHANGE!
 	if (serverHostInfo == NULL) { 
 		//DO SOMETHING HERE IF CONNECTION FAILS?
 		fprintf(stderr, "CLIENT: ERROR, no such host\n"); 
@@ -355,8 +391,6 @@ int main(int argc, char *argv[])
 	// Connect to client through data port
 	connectToServer(&dataSocketFD, dataPortAddress);
 
-	response = "I am the client and I got your message!\n";
-
 	//send message to server
 	charsWritten = sendMessage(&dataSocketFD, charsWritten, dataBuffer);
 
@@ -365,7 +399,7 @@ int main(int argc, char *argv[])
 
 	close(dataSocketFD);	//close data connection
 
-	close(listenSocketFD); // Close the listening socket
+	//close(listenSocketFD); // Close the listening socket
 	
 
 return 0;

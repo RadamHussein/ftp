@@ -149,10 +149,27 @@ elif len(sys.argv) == 6:
 	command = sys.argv[3]
 	fileName = sys.argv[4]
 	dataPort = sys.argv[5]
-	clientHost = sys.argv[6]	
+	#clientHost = sys.argv[6]	
+
+	#get the name of the client server to send for the data port connection
+	clientHost = socket.gethostname()
 
 	#concantenate arguments into message string
-	message = hostName + portNumber + command + fileName + dataPort + clientHost
+	message = command + ':' + fileName + ':' + dataPort + ':' + clientHost + ':' 
+
+	try:
+		sock.sendall(message)
+			 	
+		response = sock.recv(500)
+		if response != '1':
+			print '%s' %response
+			#exit()
+		else: 
+			print 'Valid command recieved'
+			
+	finally:
+		print >>sys.stderr, 'closing socket'
+		sock.close()
 else:
 	print "IVALID ARGUMENTS FORMAT... <SERVER_HOST> <SERVER_PORT> <COMMAND> <[FILENAME]> <DATAPORT>"
 	exit()
