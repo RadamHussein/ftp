@@ -21,7 +21,7 @@ def ListenSocket(serverSocket):
 #this function is used to receive messages from the client
 #It takes a connection object as an argument. 
 def ReceiveMessage(connectionSocket):
-	message = connectionSocket.recv(1024)
+	message = connectionSocket.recv(5000)
 	return message
 
 '''
@@ -100,6 +100,52 @@ def ConnectToClient(socket):
 	print '\n'
 	return connectionSocket
 
+'''
+This function checks the current directory for the file the
+user requested. If the file exists, an error is displayed and 
+the program terminates. If it does not exist, execution continues
+normally. It takes a fileName, and the open socket as arguments. 
+'''
+def checkForExistingFile(requestedFile):
+	#check for duplicate file
+	existingFile = os.path.exists(fileName)
+
+	#if user is requesting an existing file. Display message and quit
+	if existingFile == True:
+		return True
+	return False
+		#print 'DUPLICATE FILE WARNING. %s ALREADY EXISTS.' %fileName
+		#socket.close()
+		#exit()
+
+'''
+This function is used to handle a received file
+'''
+def receiveFile(fileName, message):
+	print "%s" %fileName
+	print(os.path.exists(fileName))
+	if (os.path.exists(fileName) == True):
+		print 'DUPLICATE FILE WARNING. "%s" ALREADY EXISTS.' %fileName
+	else:
+		#get a file ready to receive data being sent back on data connection
+		newFile = open(fileName, "w")
+		newFile.write(message);
+		newFile.close()
+
+def handleControlConnectionMessage(sock, message):
+	try:
+		sock.sendall(message)
+			 	
+		response = sock.recv(500)
+		if response != '1':
+			print '%s' %response
+		else: 
+			print 'Valid command recieved'
+			
+	finally:
+		print >>sys.stderr, 'closing socket'
+		sock.close()
+
 # Create a TCP/IP socket
 sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
@@ -131,18 +177,8 @@ if len(sys.argv) == 5:
 	#concantenate arguments into message string
 	message = command + ':' + dataPort + ':' + clientHost + ':'
 
-	try:
-		sock.sendall(message)
-			 	
-		response = sock.recv(500)
-		if response != '1':
-			print '%s' %response
-		else: 
-			print 'Valid command recieved'
-			
-	finally:
-		print >>sys.stderr, 'closing socket'
-		sock.close()
+	handleControlConnectionMessage(sock, message)
+
 elif len(sys.argv) == 6:
 	#get arguments into variables
 	hostName = sys.argv[1]
@@ -152,39 +188,20 @@ elif len(sys.argv) == 6:
 	dataPort = sys.argv[5]
 	#clientHost = sys.argv[6]	
 
+	#check current directory for the file the user is requesting
+	#checkForExistingFile(fileName, sock)
+
 	#get the name of the client server to send for the data port connection
 	clientHost = socket.gethostname()
 
 	#concantenate arguments into message string
 	message = command + ':' + fileName + ':' + dataPort + ':' + clientHost + ':' 
 
-	filewithpath = "/" + fileName
-
-	#check for duplicate file
-	existingFile = os.path.exists(filewithpath)
-
-	print "evaluating filename..."
-	
-	if existingFile == True:
-		print "%s ALREADY EXISTS!"
-		exit()
-
 	#get a file ready to receive data being sent back on data connection
-	newFile = open(fileName, "w")
+	#newFile = open(fileName, "w")
 
-	try:
-		sock.sendall(message)
-			 	
-		response = sock.recv(500)
-		if response != '1':
-			print '%s' %response
-			#exit()
-		else: 
-			print 'Valid command recieved'
-			
-	finally:
-		print >>sys.stderr, 'closing socket'
-		sock.close()
+	handleControlConnectionMessage(sock, message)
+
 else:
 	print "IVALID ARGUMENTS FORMAT... <SERVER_HOST> <SERVER_PORT> <COMMAND> <[FILENAME]> <DATAPORT>"
 	exit()
@@ -214,9 +231,8 @@ try:
 				clientMessage = ReceiveMessage(connection)
 
 				if clientMessage:
-					if (len(sys.argv) == 6):
-						#write to file
-						newFile.write(clientMessage);
+					if (len(sys.argv) == 6):	
+						receiveFile(fileName, clientMessage)					
 						break
 					else:
 						#display response
@@ -226,7 +242,6 @@ try:
 					print >>sys.stderr, 'no more data from client'
 					connection.close()
 					break
-			newFile.close()
 		except:
 			connection.close()
 			serverSocket.close()
@@ -240,7 +255,36 @@ except:
  
 serverSocket.close()
 
+'''	try:
+		sock.sendall(message)
+			 	
+		response = sock.recv(500)
+		if response != '1':
+			print '%s' %response
+		else: 
+			print 'Valid command recieved'
+			
+	finally:
+		print >>sys.stderr, 'closing socket'
+		sock.close()
 '''
+
+'''
+Replace this code if receiveFile does not work
+#check current directory for the file the user is requesting
+#checkForExistingFile(fileName, sock)
+print "%s" %fileName
+						print(os.path.exists(fileName))
+						if (os.path.exists(fileName) == True):
+							print 'DUPLICATE FILE WARNING. "%s" ALREADY EXISTS.' %fileName
+							break
+						else:
+							#get a file ready to receive data being sent back on data connection
+							newFile = open(fileName, "w")
+							newFile.write(clientMessage);
+							newFile.close()
+
+
 	try:
 		while True:
 			#connect to server through data port

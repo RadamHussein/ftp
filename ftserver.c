@@ -198,39 +198,215 @@ void connectToServer(int *sockFD, struct sockaddr_in serverAddress){
 	}
 }
 
-int main(int argc, char *argv[])
-{
-	int listenSocketFD;
-	int dataSocketFD;
-	int establishedConnectionFD; 
-	int portNumber;
-	int charsRead;
-	int charsWritten;
-	int validCommandRecieved;
-	int textFileSize;						//size of the open text file
-	FILE *textFP;							//pointer to text file
-	socklen_t sizeOfClientInfo;
-	char buffer[256];
-	char temp[256];										//string to hold copy of buffer
-	char dataBuffer[256];						//string to hold response sent through the data connection
-	char cwd[100];										//holds the current working directory
-	char filepath[100];
-	char *response;
-	char *controlConnectionCommand;
-	char *filename;										//string holds the name of a requested file
-	char *dataPortHost;									//string to hold the name of the client's server data port
-	int dataPortNumber;									//holds the port number of the client's server data port
-	struct sockaddr_in serverAddress, clientAddress;	//control connection structs
-
+void sendRequestThroughDataConnection(char **dataPortHost, int dataPortNumber, char *dataBuffer){
 	//data connection structs
 	struct sockaddr_in dataPortAddress;
 	struct hostent* serverHostInfo;
+
+	int dataSocketFD;
+	int charsWritten;
+
+	// Set up the server address struct
+	memset((char*)&dataPortAddress, '\0', sizeof(dataPortAddress)); 	// Clear out the address struct
+	dataPortAddress.sin_family = AF_INET; 							// Create a network-capable socket
+	dataPortAddress.sin_port = htons(dataPortNumber); 				// Store the port number
+	serverHostInfo = gethostbyname(*dataPortHost);						            //ip is localhost - WILL HAVE TO CHANGE!
+	//serverHostInfo = gethostbyname("localhost");						            //ip is localhost - WILL HAVE TO CHANGE!
+	if (serverHostInfo == NULL) { 
+		//DO SOMETHING HERE IF CONNECTION FAILS?
+		fprintf(stderr, "CLIENT: ERROR, no such host\n"); 
+	}
+	memcpy((char*)&dataPortAddress.sin_addr.s_addr, (char*)serverHostInfo->h_addr, serverHostInfo->h_length); // Copy in the address
+
+	//set up data port socket
+	setUpSocket(&dataSocketFD);
+
+	printf("connecting to data port...\n");
+
+	// Connect to client through data port
+	connectToServer(&dataSocketFD, dataPortAddress);
+
+	//send message to server
+	charsWritten = sendMessage(&dataSocketFD, charsWritten, dataBuffer);
+
+	//check that charsWritten == message length
+	checkForCompletion(charsWritten, dataBuffer);
+
+	close(dataSocketFD);	//close data connection
+
+	//close(listenSocketFD); // Close the listening socket
+}
+
+void handleRequest(char *buffer, int establishedConnectionFD){
+	char temp[256];
+	//char dataBuffer[256];
+	char filepath[100];
+	char cwd[100];
+	char *controlConnectionCommand;
+	char *response;
+	char *dataPortHost;
+	char *filename;
+	int dataPortNumber;
+	int validCommandRecieved;
+	int charsRead;
+	int textFileSize;
+	FILE *textFP;
 
 	//set up directory struct
 	DIR *d;
 	struct dirent *dir;
 	d = opendir(".");
 
+	//copy buffer into temp
+	strcpy(temp, buffer);
+
+	//check the command sent through the control connection
+	controlConnectionCommand = parseControlConnectionMessage(temp);
+	validCommandRecieved = isValidCommand(controlConnectionCommand);
+
+		//determine the type of response based on the request
+		if (validCommandRecieved == 1){							//valid -l command
+			//parse out the other arguments from the message
+			parseGetListTokens(buffer, &dataPortNumber, &dataPortHost);
+			printf("data port is: %d\n", dataPortNumber);
+			response = "1\n";
+
+			//send response back to client
+			charsRead = sendMessage(&establishedConnectionFD, charsRead, response);
+
+			//check for completion
+			if (charsRead < 0) {
+				printf("ERROR writing to socket\n");
+				//break; MAYBE REPLACE WITH A RETURN STATEMENT
+			}
+			//else{
+			//	break;
+			//}
+
+			char listItem[256];							//will hold the current list item
+			char tempBuffer[256];						//will hold the last contents of dataBuffer
+			char dataBuffer[256];						//will hold final contents to send to client
+
+			//get contents of directory
+			if (d){
+				while ((dir = readdir(d)) != NULL){
+					printf("%s\n", dir->d_name);
+					memset(listItem, '\0', sizeof(listItem));
+					memset(tempBuffer, '\0', sizeof(tempBuffer));
+					memcpy(tempBuffer, dataBuffer, strlen(dataBuffer)+1);
+					memcpy(listItem, dir->d_name, strlen(dir->d_name)+1);
+					sprintf(dataBuffer, "%s\n%s", tempBuffer, listItem);
+				}
+				closedir(d);
+			}
+			sendRequestThroughDataConnection(&dataPortHost, dataPortNumber, dataBuffer);
+		}
+		else if (validCommandRecieved == 2){					//valid -g command
+			//parse out the other arguments from the message
+			parseGetFileTokens(buffer, &filename, &dataPortNumber, &dataPortHost);
+			response = "1\n";				//okay response
+
+			getcwd(cwd, sizeof(cwd));
+			printf("current working directory is: %s\n", cwd);
+
+			sprintf(filepath, ".%s/%s", cwd, filename);
+
+			printf("full file path: %s\n", filepath);
+
+			//open file for reading
+			textFP = fopen(filename, "r");
+
+			if (textFP != NULL){
+				response = "1\n";	//okay response
+				//send response back to client
+				charsRead = sendMessage(&establishedConnectionFD, charsRead, response);
+
+				//check for completion
+				if (charsRead < 0) {
+					printf("ERROR writing to socket\n");
+					//break; MAYBE REPLACE WITH A RETURN STATEMENT
+				}
+
+				//get file size
+				fseek(textFP, 0, SEEK_END);
+				textFileSize = ftell(textFP);
+				fseek(textFP, 0, SEEK_SET);
+				printf("File length: %d\n", textFileSize);
+
+				//create an array large enough to hold the file and fill it with 0's
+				char dataBuffer[textFileSize];
+				memset(dataBuffer, 0, sizeof(dataBuffer));
+
+				//read the file into the the buffer array
+				fread(dataBuffer, sizeof(dataBuffer), 1, textFP);
+
+				fclose(textFP);
+
+				//send requested file to client
+				sendRequestThroughDataConnection(&dataPortHost, dataPortNumber, dataBuffer);
+			}
+			else{
+				response = "FILE NOT FOUND\n";
+				//send response back to client
+				charsRead = sendMessage(&establishedConnectionFD, charsRead, response);
+
+				//check for completion
+				if (charsRead < 0) {
+					printf("ERROR writing to socket\n");
+					//break; MAYBE REPLACE WITH A RETURN STATEMENT
+				}
+			}			
+		}	
+		else{													//invalid command
+			response = "INVALID COMMAND\n";
+		}
+
+		//send response back to client
+		charsRead = sendMessage(&establishedConnectionFD, charsRead, response);
+
+		//check for completion
+		if (charsRead < 0) {
+			printf("ERROR writing to socket\n");
+		}
+		//else{
+		//	break;
+		//} MAYBE REPLACE WITH A RETURN STATEMENT
+}
+
+int main(int argc, char *argv[])
+{
+	int listenSocketFD;
+	int dataSocketFD;
+	int establishedConnectionFD; 
+	int portNumber;
+	//restore this if things break int charsRead;
+	int charsWritten;
+	///restore this if things break int validCommandRecieved;
+	int textFileSize;						//size of the open text file
+	//restore this if things break FILE *textFP;							//pointer to text file
+	socklen_t sizeOfClientInfo;
+	char buffer[256];
+	//restore this if things break char temp[256];										//string to hold copy of buffer
+	//restore this if things break char dataBuffer[256];						//string to hold response sent through the data connection
+	//restore this if things break char cwd[100];										//holds the current working directory
+	//restore this if things break char filepath[100];
+	// restore this if things break char *response;
+	//restore this if things break char *controlConnectionCommand;
+	//restore this if things break char *filename;										//string holds the name of a requested file
+	//restore this ig things break char *dataPortHost;									//string to hold the name of the client's server data port
+	//restore this if things break int dataPortNumber;									//holds the port number of the client's server data port
+	struct sockaddr_in serverAddress, clientAddress;	//control connection structs
+
+	//data connection structs
+	struct sockaddr_in dataPortAddress;
+	struct hostent* serverHostInfo;
+
+/*  RESTORE THIS IF THINGS BREAK
+	//set up directory struct
+	DIR *d;
+	struct dirent *dir;
+	d = opendir(".");
+*/
 	void sigint_handler(int sig); /* prototype */
 	struct sigaction sa;
 
@@ -283,124 +459,15 @@ int main(int argc, char *argv[])
 
 		// Get the message from the client
 		recieveMessage(establishedConnectionFD, buffer);
-		
-		//copy buffer into temp
-		strcpy(temp, buffer);
 
-		//check the command sent through the control connection
-		controlConnectionCommand = parseControlConnectionMessage(temp);
-		validCommandRecieved = isValidCommand(controlConnectionCommand);
-
-		//determine the type of response based on the request
-		if (validCommandRecieved == 1){							//valid -l command
-			//parse out the other arguments from the message
-			parseGetListTokens(buffer, &dataPortNumber, &dataPortHost);
-			printf("data port is: %d\n", dataPortNumber);
-			response = "1\n";
-
-			char listItem[256];							//will hold the current list item
-			char tempBuffer[256];						//will hold the last contents of dataBuffer
-			//get contents of directory
-			if (d){
-				while ((dir = readdir(d)) != NULL){
-					printf("%s\n", dir->d_name);
-					memset(listItem, '\0', sizeof(listItem));
-					memset(tempBuffer, '\0', sizeof(tempBuffer));
-					memcpy(tempBuffer, dataBuffer, strlen(dataBuffer)+1);
-					memcpy(listItem, dir->d_name, strlen(dir->d_name)+1);
-					sprintf(dataBuffer, "%s\n%s", tempBuffer, listItem);
-				}
-				closedir(d);
-			}
-		}
-		else if (validCommandRecieved == 2){					//valid -g command
-			//parse out the other arguments from the message
-			parseGetFileTokens(buffer, &filename, &dataPortNumber, &dataPortHost);
-			response = "1\n";				//okay response
-
-			getcwd(cwd, sizeof(cwd));
-			printf("current working directory is: %s\n", cwd);
-
-			sprintf(filepath, ".%s/%s", cwd, filename);
-
-			printf("full file path: %s\n", filepath);
-
-			//open file for reading
-			textFP = fopen(filename, "r");
-
-			//check that the file opened or exists
-			if (textFP == NULL){
-				response = "FILE NOT FOUND\n";
-			}
-			else{
-				//get file size
-				//fseek(textFP, 0, SEEK_END);
-				//textFileSize = ftell(textFP);
-				//fseek(textFP, 0, SEEK_SET);
-
-				//create an array large enough to hold the file and fill it with 0's
-				//char dataBuffer[textFileSize];
-				memset(dataBuffer, 0, sizeof(dataBuffer));
-
-				//read the file into the the buffer array
-				fread(dataBuffer, sizeof(dataBuffer), 1, textFP);
-
-				fclose(textFP);
-				response = "1\n";	//okay response
-			}
-			
-		}	
-		else{													//invalid command
-			response = "INVALID COMMAND\n";
-		}
-
-		//send response back to client
-		charsRead = sendMessage(&establishedConnectionFD, charsRead, response);
-
-		//check for completion
-		if (charsRead < 0) {
-			printf("ERROR writing to socket\n");
-		}
-		else{
-			break;
-		}
+		//do something with the request
+		handleRequest(buffer, establishedConnectionFD);
 	}
 
-	close(establishedConnectionFD); // Close the existing socket which is connected to the client
+	//close(establishedConnectionFD); // Close the existing socket which is connected to the client
 
 	//wait a moment for the client to begin listening on the data port
 	//sleep(10);
-
-	// Set up the server address struct
-	memset((char*)&dataPortAddress, '\0', sizeof(dataPortAddress)); 	// Clear out the address struct
-	dataPortAddress.sin_family = AF_INET; 							// Create a network-capable socket
-	dataPortAddress.sin_port = htons(dataPortNumber); 				// Store the port number
-	serverHostInfo = gethostbyname(dataPortHost);						            //ip is localhost - WILL HAVE TO CHANGE!
-	//serverHostInfo = gethostbyname("localhost");						            //ip is localhost - WILL HAVE TO CHANGE!
-	if (serverHostInfo == NULL) { 
-		//DO SOMETHING HERE IF CONNECTION FAILS?
-		fprintf(stderr, "CLIENT: ERROR, no such host\n"); 
-	}
-	memcpy((char*)&dataPortAddress.sin_addr.s_addr, (char*)serverHostInfo->h_addr, serverHostInfo->h_length); // Copy in the address
-
-	//set up data port socket
-	setUpSocket(&dataSocketFD);
-
-	printf("connecting to data port...\n");
-
-	// Connect to client through data port
-	connectToServer(&dataSocketFD, dataPortAddress);
-
-	//send message to server
-	charsWritten = sendMessage(&dataSocketFD, charsWritten, dataBuffer);
-
-	//check that charsWritten == message length
-	checkForCompletion(charsWritten, response);
-
-	close(dataSocketFD);	//close data connection
-
-	//close(listenSocketFD); // Close the listening socket
-	
 
 return 0;
 }
