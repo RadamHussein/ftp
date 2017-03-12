@@ -250,6 +250,8 @@ void handleRequest(char *buffer, int establishedConnectionFD){
 	int validCommandRecieved;
 	int charsRead;
 	int textFileSize;
+	int responseLength;
+	char *responseLengthString;
 	FILE *textFP;
 
 	//set up directory struct
@@ -290,7 +292,7 @@ void handleRequest(char *buffer, int establishedConnectionFD){
 			//get contents of directory
 			if (d){
 				while ((dir = readdir(d)) != NULL){
-					printf("%s\n", dir->d_name);
+					//printf("%s\n", dir->d_name);
 					memset(listItem, '\0', sizeof(listItem));
 					memset(tempBuffer, '\0', sizeof(tempBuffer));
 					memcpy(tempBuffer, dataBuffer, strlen(dataBuffer)+1);
@@ -299,12 +301,14 @@ void handleRequest(char *buffer, int establishedConnectionFD){
 				}
 				closedir(d);
 			}
+			responseLength = strlen(dataBuffer);
+
 			sendRequestThroughDataConnection(&dataPortHost, dataPortNumber, dataBuffer);
 		}
 		else if (validCommandRecieved == 2){					//valid -g command
 			//parse out the other arguments from the message
 			parseGetFileTokens(buffer, &filename, &dataPortNumber, &dataPortHost);
-			response = "1\n";				//okay response
+			//response = "1\n";				//okay response
 
 			getcwd(cwd, sizeof(cwd));
 			printf("current working directory is: %s\n", cwd);
@@ -332,6 +336,10 @@ void handleRequest(char *buffer, int establishedConnectionFD){
 				textFileSize = ftell(textFP);
 				fseek(textFP, 0, SEEK_SET);
 				printf("File length: %d\n", textFileSize);
+
+				//snprintf(response, 3, "%d", textFileSize);
+
+				//charsRead = sendMessage(&establishedConnectionFD, charsRead, response);
 
 				//create an array large enough to hold the file and fill it with 0's
 				char dataBuffer[textFileSize];

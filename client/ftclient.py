@@ -21,7 +21,7 @@ def ListenSocket(serverSocket):
 #this function is used to receive messages from the client
 #It takes a connection object as an argument. 
 def ReceiveMessage(connectionSocket):
-	message = connectionSocket.recv(5000)
+	message = connectionSocket.recv(80000)
 	return message
 
 '''
