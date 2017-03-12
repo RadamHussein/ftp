@@ -381,40 +381,46 @@ void handleRequest(char *buffer, int establishedConnectionFD){
 		//} MAYBE REPLACE WITH A RETURN STATEMENT
 }
 
+/********************************************************
+* This function binds the socket and starts it listening 
+* for connection requests. It takes in a pointer to the 
+* listenFD integer, the socket struct and the port number
+* to listen on. 
+********************************************************/
+void startup(int *listenSocketFD, struct sockaddr_in serverAddress, int portNumber){
+	// Set up the socket
+	*listenSocketFD = socket(AF_INET, SOCK_STREAM, 0); // Create the socket
+	if (*listenSocketFD < 0) {
+		printf("ERROR opening socket\n");
+	}
+
+	// Enable the socket to begin listening
+	if (bind(*listenSocketFD, (struct sockaddr *)&serverAddress, sizeof(serverAddress)) < 0){
+		printf("ERROR on binding\n");
+		exit(1);
+	} 
+	else {
+		listen(*listenSocketFD, 2); // Flip the socket on - it can now receive up to 2 connections
+		printf("Server listening on port %d\n", portNumber);
+	}
+}
+
 int main(int argc, char *argv[])
 {
 	int listenSocketFD;
 	int dataSocketFD;
 	int establishedConnectionFD; 
 	int portNumber;
-	//restore this if things break int charsRead;
 	int charsWritten;
-	///restore this if things break int validCommandRecieved;
 	int textFileSize;						//size of the open text file
-	//restore this if things break FILE *textFP;							//pointer to text file
 	socklen_t sizeOfClientInfo;
 	char buffer[256];
-	//restore this if things break char temp[256];										//string to hold copy of buffer
-	//restore this if things break char dataBuffer[256];						//string to hold response sent through the data connection
-	//restore this if things break char cwd[100];										//holds the current working directory
-	//restore this if things break char filepath[100];
-	// restore this if things break char *response;
-	//restore this if things break char *controlConnectionCommand;
-	//restore this if things break char *filename;										//string holds the name of a requested file
-	//restore this ig things break char *dataPortHost;									//string to hold the name of the client's server data port
-	//restore this if things break int dataPortNumber;									//holds the port number of the client's server data port
 	struct sockaddr_in serverAddress, clientAddress;	//control connection structs
 
 	//data connection structs
 	struct sockaddr_in dataPortAddress;
 	struct hostent* serverHostInfo;
 
-/*  RESTORE THIS IF THINGS BREAK
-	//set up directory struct
-	DIR *d;
-	struct dirent *dir;
-	d = opendir(".");
-*/
 	void sigint_handler(int sig); /* prototype */
 	struct sigaction sa;
 
@@ -434,21 +440,8 @@ int main(int argc, char *argv[])
 	serverAddress.sin_port = htons(portNumber); // Store the port number
 	serverAddress.sin_addr.s_addr = INADDR_ANY; // Any address is allowed for connection to this process
 
-	// Set up the socket
-	listenSocketFD = socket(AF_INET, SOCK_STREAM, 0); // Create the socket
-	if (listenSocketFD < 0) {
-		printf("ERROR opening socket\n");
-	}
-
-	// Enable the socket to begin listening
-	if (bind(listenSocketFD, (struct sockaddr *)&serverAddress, sizeof(serverAddress)) < 0){
-		printf("ERROR on binding\n");
-		exit(1);
-	} 
-	else {
-		listen(listenSocketFD, 2); // Flip the socket on - it can now receive up to 2 connections
-		printf("Server listening on port %d\n", portNumber);
-	}
+	//start the server listening
+	startup(&listenSocketFD, serverAddress, portNumber);
 
 	//listen for signals
 	if (sigaction(SIGINT, &sa, NULL) == -1) {

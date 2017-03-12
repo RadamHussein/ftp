@@ -131,14 +131,26 @@ def receiveFile(fileName, message):
 		newFile = open(fileName, "w")
 		newFile.write(message);
 		newFile.close()
+		print 'TRANSFER COMPLETE'
 
-def handleControlConnectionMessage(sock, message):
+'''
+This function handles communication with the server
+through the control connection. It sends the initial
+message and receives the response. It then checks the
+response for a '1', meaning that the server verified
+the input (commands, porst or requested files). Else
+the error message sent back from the server is printed
+and the program exits. 
+'''
+def makeRequest(sock, message):
 	try:
 		sock.sendall(message)
 			 	
 		response = sock.recv(500)
-		if response != '1':
+		if response != '1\n':
 			print '%s' %response
+			sock.close()
+			exit()
 		else: 
 			print 'Valid command recieved'
 			
@@ -146,22 +158,85 @@ def handleControlConnectionMessage(sock, message):
 		print >>sys.stderr, 'closing socket'
 		sock.close()
 
-# Create a TCP/IP socket
-sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+'''
+This function sets up the client socket and 
+initiates contact with the server.
+'''
+def initiateContact(hostName, portNumber):
+	# Create a TCP/IP socket
+	clientsock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+
+	# Connect the socket to the port where the server is listening
+	server_address = (hostName, portNumber)
+	print >>sys.stderr, 'connecting to %s port %s' % server_address
+	clientsock.connect(server_address)
+
+	return clientsock
+
+'''
+This function starts up the server socket for the
+data port connection. It starts the socket listening
+on the port specified by the user.
+'''
+def openDataConnection(dataPort):
+	#create a socket for data port
+	serverSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+
+	#bind the socket for data port
+	BindSocket(serverSocket, clientServerPort)
+
+	#Start listening on socket for data port
+	ListenSocket(serverSocket)
+
+	return serverSocket
+
+def handleDataConnection(serverSocket):
+	try:
+		while True:
+			#connect to through data port
+			print 'waiting for client to connect...'
+			connection = ConnectToClient(serverSocket)
+			
+			try:
+				while True:
+					#receive message from client
+					clientMessage = ReceiveMessage(connection)
+
+					if clientMessage:
+						if (len(sys.argv) == 6):	
+							receiveFile(fileName, clientMessage)					
+							break
+						else:
+							#display response
+							print '%s' %clientMessage
+							break
+					else:
+						print >>sys.stderr, 'no more data from client'
+						connection.close()
+						break
+			except:
+				connection.close()
+				serverSocket.close()
+			break		
+	except:
+		connection.close()
+		serverSocket.close()
+		print '\n'
+		print 'Goodbye!\n'
+
+ 
 
 #get arguments into variables
 hostName = sys.argv[1]
 portNumber = int(sys.argv[2])
 
-# Connect the socket to the port where the server is listening
-server_address = (hostName, portNumber)
-print >>sys.stderr, 'connecting to %s port %s' % server_address
-sock.connect(server_address)
+#make contact with the server
+sock = initiateContact(hostName, portNumber)
 
 #checking arguments
-print 'Number of arguments: ', len(sys.argv)
-print 'Argument List:', str(sys.argv)
-arguments = str(sys.argv)
+#print 'Number of arguments: ', len(sys.argv)
+#print 'Argument List:', str(sys.argv)
+#arguments = str(sys.argv)
 
 #new control logic - no more validating arguments in client
 if len(sys.argv) == 5:
@@ -177,7 +252,7 @@ if len(sys.argv) == 5:
 	#concantenate arguments into message string
 	message = command + ':' + dataPort + ':' + clientHost + ':'
 
-	handleControlConnectionMessage(sock, message)
+	makeRequest(sock, message)
 
 elif len(sys.argv) == 6:
 	#get arguments into variables
@@ -200,113 +275,18 @@ elif len(sys.argv) == 6:
 	#get a file ready to receive data being sent back on data connection
 	#newFile = open(fileName, "w")
 
-	handleControlConnectionMessage(sock, message)
+	makeRequest(sock, message)
 
 else:
 	print "IVALID ARGUMENTS FORMAT... <SERVER_HOST> <SERVER_PORT> <COMMAND> <[FILENAME]> <DATAPORT>"
 	exit()
 
 #DATA PORT CODE
-#create a socket for data port
-serverSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
 #convert the data port to an int to open the data port listening socket
 clientServerPort = int(dataPort)
 
-#bind the socket for data port
-BindSocket(serverSocket, clientServerPort)
-
-#Start listening on socket for data port
-ListenSocket(serverSocket)
-
-try:
-	while True:
-		#connect to through data port
-		print 'waiting for client to connect...'
-		connection = ConnectToClient(serverSocket)
-		
-		try:
-			while True:
-				#receive message from client
-				clientMessage = ReceiveMessage(connection)
-
-				if clientMessage:
-					if (len(sys.argv) == 6):	
-						receiveFile(fileName, clientMessage)					
-						break
-					else:
-						#display response
-						print '%s' %clientMessage
-						break
-				else:
-					print >>sys.stderr, 'no more data from client'
-					connection.close()
-					break
-		except:
-			connection.close()
-			serverSocket.close()
-		break		
-except:
-	connection.close()
-	serverSocket.close()
-	print '\n'
-	print 'Goodbye!\n'
-
- 
+serverSocket = openDataConnection(clientServerPort)
+handleDataConnection(serverSocket)
 serverSocket.close()
-
-'''	try:
-		sock.sendall(message)
-			 	
-		response = sock.recv(500)
-		if response != '1':
-			print '%s' %response
-		else: 
-			print 'Valid command recieved'
-			
-	finally:
-		print >>sys.stderr, 'closing socket'
-		sock.close()
-'''
-
-'''
-Replace this code if receiveFile does not work
-#check current directory for the file the user is requesting
-#checkForExistingFile(fileName, sock)
-print "%s" %fileName
-						print(os.path.exists(fileName))
-						if (os.path.exists(fileName) == True):
-							print 'DUPLICATE FILE WARNING. "%s" ALREADY EXISTS.' %fileName
-							break
-						else:
-							#get a file ready to receive data being sent back on data connection
-							newFile = open(fileName, "w")
-							newFile.write(clientMessage);
-							newFile.close()
-
-
-	try:
-		while True:
-			#connect to server through data port
-			connection = ConnectToClient(serverSocket)
-
-			#get the name of the client server to send for the data port connection
-			clientHost = socket.gethostname()
-
-			#concantenate arguments into message string
-			message = command + ':' + dataPort + ':' + clientHost + ':'
-
-			try:
-			    sock.sendall(message)
-			 	
-			    response = sock.recv(500)
-			    print 'Message returned from server: %s' %response
-			
-			finally:
-				print >>sys.stderr, 'closing socket'
-				sock.close()
-	finally:
-		connection.close()
-		serverSocket.close()
-'''
 
