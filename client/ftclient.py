@@ -1,9 +1,30 @@
+'''
+ftclient.py
+
+CS372 - Project 2
+Adam Smith
+Winter 2017
+
+This program implements the ftp protocol. This is the client side
+which initiates contact with the server via a control connection. 
+It then also acts as a server when receiving data through the data
+connection. This program allows the user to either request a listing
+of the files in the directory the server is running on, or request a 
+specific file. This program accepts either 4 or 5 arguments. 
+To request a directory list run with:
+"python ftclient.py <server hostname> <port number> -l <data port>".
+To request a file, run with:
+"python ftclient.py <server hostname> <port number> -g <filename> <data port>"
+'''
+
 import socket
 import sys
 import os.path
 
-#this function is used for binding the socket to the port number.
-#It takes a socket object as an argument. 
+'''
+This function is used for binding the socket to the port number.
+It takes a socket object as an argument. 
+'''
 def BindSocket(serverSocket, port):
 	try:
 		serverSocket.bind(('', port))
@@ -11,15 +32,18 @@ def BindSocket(serverSocket, port):
 		print 'Bind failed. Error Code : ' + str(msg[0]) + ' Message ' + msg[1]
 		sys.exit()
 
-#this function starts the server listening on the specified port
-#It takes a socket object as an argument.
+'''
+This function starts the server listening on the specified port
+It takes a socket object as an argument.
+'''
 def ListenSocket(serverSocket):
 	serverSocket.listen(1)
-	print 'Data port open on port #: %d' %clientServerPort
-	#print 'hostname: %s' %socket.getfqdn()
+	#print 'Data port open on port #: %d' %clientServerPort
 
-#this function is used to receive messages from the client
-#It takes a connection object as an argument. 
+'''
+This function is used to receive messages from the client
+It takes a connection object as an argument. 
+'''
 def ReceiveMessage(connectionSocket):
 	message = connectionSocket.recv(80000)
 	return message
@@ -46,26 +70,15 @@ def CheckForFileRequestCommand(command):
 	else:
 		return False
 
-#function for sending command and port number through 
-#control connection to the server
+'''
+This function is for sending a command and port number 
+through the control connection to the server.
+'''
 def SendListCommand(sock, message):
 	try:
-    
 	    # Send data
-	    #message = 'This is the message.'
-	    #print >>sys.stderr, 'sending "%s"' % message
 	    sock.sendall(message)
-
-	    # Look for the response
-	    #amount_received = 0
-	    #amount_expected = len(message)
-	 	
-	    #while amount_received < amount_expected:
-	     #   data = sock.recv(16)
-	     #   amount_received += len(data)
-		
 	finally:
-		print >>sys.stderr, 'closing socket'
 		sock.close()
 
 '''
@@ -74,30 +87,18 @@ through the control connection to the server
 '''
 def SendGetFileCommand(sock, message):
 	try:
-    
-	    # Send data
-	    #message = 'This is the message.'
-	    #print >>sys.stderr, 'sending "%s"' % message
-	    sock.sendall(message)
-
-	    # Look for the response
-	    #amount_received = 0
-	    #amount_expected = len(message)
-	 	
-	    #while amount_received < amount_expected:
-	     #   data = sock.recv(16)
-	     #   amount_received += len(data)
-	
+    	# Send data
+	    sock.sendall(message)	
 	finally:
-		print >>sys.stderr, 'closing socket'
 		sock.close()
 
-#this function is used to establish a connection with a client
-#It takes a socket object as an argument
+'''
+this function is used to establish a connection with a client
+It takes a socket object as an argument
+'''
 def ConnectToClient(socket):
 	connectionSocket, addr = socket.accept()
-	print 'Connected with ' + addr[0] + ':' + str(addr[1])
-	print '\n'
+	#print 'Connected with ' + addr[0] + ':' + str(addr[1])
 	return connectionSocket
 
 '''
@@ -114,16 +115,17 @@ def checkForExistingFile(requestedFile):
 	if existingFile == True:
 		return True
 	return False
-		#print 'DUPLICATE FILE WARNING. %s ALREADY EXISTS.' %fileName
-		#socket.close()
-		#exit()
 
 '''
-This function is used to handle a received file
+This function is used to handle a received file. 
+It checks to see if the file requested already
+exists. If so it prints a warning and does not
+write the requested data to a file. If the file
+does not exist, it writes the requested data to
+a file.
 '''
 def receiveFile(fileName, message):
-	print "%s" %fileName
-	print(os.path.exists(fileName))
+	#print(os.path.exists(fileName))
 	if (os.path.exists(fileName) == True):
 		print 'DUPLICATE FILE WARNING. "%s" ALREADY EXISTS.' %fileName
 	else:
@@ -150,12 +152,8 @@ def makeRequest(sock, message):
 		if response != '1\n':
 			print '%s' %response
 			sock.close()
-			exit()
-		else: 
-			print 'Valid command recieved'
-			
+			exit()			
 	finally:
-		print >>sys.stderr, 'closing socket'
 		sock.close()
 
 '''
@@ -169,6 +167,7 @@ def initiateContact(hostName, portNumber):
 	# Connect the socket to the port where the server is listening
 	server_address = (hostName, portNumber)
 	print >>sys.stderr, 'connecting to %s port %s' % server_address
+	print '\n'
 	clientsock.connect(server_address)
 
 	return clientsock
@@ -190,11 +189,17 @@ def openDataConnection(dataPort):
 
 	return serverSocket
 
+'''
+This function handles the communication between 
+the server and client over the data connections.
+It takes in the serverSocket. It calls the 
+ConnectToClient, receiveMessage and receiveFile 
+functions.
+'''
 def handleDataConnection(serverSocket):
 	try:
 		while True:
 			#connect to through data port
-			print 'waiting for client to connect...'
 			connection = ConnectToClient(serverSocket)
 			
 			try:
@@ -202,16 +207,17 @@ def handleDataConnection(serverSocket):
 					#receive message from client
 					clientMessage = ReceiveMessage(connection)
 
+					#if a message is received
 					if clientMessage:
 						if (len(sys.argv) == 6):	
+							#if a file was requested, receive the file
 							receiveFile(fileName, clientMessage)					
 							break
 						else:
-							#display response
+							#else, list was requested. Display the directory contents
 							print '%s' %clientMessage
 							break
 					else:
-						print >>sys.stderr, 'no more data from client'
 						connection.close()
 						break
 			except:
@@ -232,11 +238,6 @@ portNumber = int(sys.argv[2])
 
 #make contact with the server
 sock = initiateContact(hostName, portNumber)
-
-#checking arguments
-#print 'Number of arguments: ', len(sys.argv)
-#print 'Argument List:', str(sys.argv)
-#arguments = str(sys.argv)
 
 #new control logic - no more validating arguments in client
 if len(sys.argv) == 5:
@@ -261,10 +262,6 @@ elif len(sys.argv) == 6:
 	command = sys.argv[3]
 	fileName = sys.argv[4]
 	dataPort = sys.argv[5]
-	#clientHost = sys.argv[6]	
-
-	#check current directory for the file the user is requesting
-	#checkForExistingFile(fileName, sock)
 
 	#get the name of the client server to send for the data port connection
 	clientHost = socket.gethostname()
@@ -272,13 +269,12 @@ elif len(sys.argv) == 6:
 	#concantenate arguments into message string
 	message = command + ':' + fileName + ':' + dataPort + ':' + clientHost + ':' 
 
-	#get a file ready to receive data being sent back on data connection
-	#newFile = open(fileName, "w")
-
+	#send request to the server
 	makeRequest(sock, message)
 
 else:
 	print "IVALID ARGUMENTS FORMAT... <SERVER_HOST> <SERVER_PORT> <COMMAND> <[FILENAME]> <DATAPORT>"
+	sock.close()
 	exit()
 
 #DATA PORT CODE

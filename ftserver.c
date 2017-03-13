@@ -1,3 +1,27 @@
+/****************************************************************
+* ftserver.c
+* 
+* CS372 - Project 2
+* Adam Smith
+* Winter 2017
+*
+* This program implements the ftp protocol. This is the server side. 
+* It waits for a connection request from a client which will establish
+* a control connection. The client will then send a command to the 
+* server requesting either a listing of files in the current directory,
+* or a specific file. The server will verify the parameters of the 
+* request and check for the file in the directory. If there is an error
+* with the request, an error message will be sent back to the client. 
+* If everything is okay, an "okay" message will be sent back to the client
+* though the control connection and a data connection will be initiated by the 
+* server. The requested data will be sent through the data connection which 
+* will be terminated by the client. The server will run until terminated by 
+* the administrator. 
+* To compile: gcc ftserver.c -o ftserver
+* To run: ./ftserver <port number>
+*****************************************************************/
+
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -9,7 +33,7 @@
 #include <netdb.h>
 #include <dirent.h> 
 
-
+//signal handler function
 void sigint_handler(int sig)
 {
 	printf("\n");
@@ -29,7 +53,6 @@ void recieveMessage(int sockFD, char *buffer){
 	if (charsRead < 0) {
 		printf("ERROR reading from socket\n");
 	}
-	printf("SERVER: I received this from the client: \"%s\"\n", buffer);
 }
 
 /************************************************
@@ -41,7 +64,6 @@ char *parseControlConnectionMessage(char *message){
 	char *command;
 
 	command = strtok(message, delim);
-	printf("Command received: %s\n", command);
 
 	return command;
 }
@@ -52,7 +74,6 @@ char *parseControlConnectionMessage(char *message){
 ********************************************/
 void parseToken(char **token, char *delim){
 	*token = strtok(NULL, delim);
-	printf("next token: %s\n", *token);
 }
 
 /********************************************
@@ -61,13 +82,12 @@ void parseToken(char **token, char *delim){
 * called when the client has sent a -l command.
 *********************************************/
 void parseGetListTokens(char *message, int *portNumber, char **host){
-	printf("after parsing command, message contains: %s\n", message);
+	//printf("after parsing command, message contains: %s\n", message);
 	char *delim = ":";
 	char *token;
 
 	//get the command out of the string
 	token = strtok(message, delim);
-	printf("first token: %s\n", token);
 
 	parseToken(&token, delim);
 
@@ -85,13 +105,11 @@ void parseGetListTokens(char *message, int *portNumber, char **host){
 * called when the client has sent a -g command.
 *********************************************/
 void parseGetFileTokens(char *message, char **file, int *portNumber, char **host){
-	printf("after parsing command, message contains: %s\n", message);
 	char *delim = ":";
 	char *token;
 
 	//get the command out of the string
 	token = strtok(message, delim);
-	printf("first token: %s\n", token);
 
 	//get file name into a variable
 	parseToken(&token, delim);
@@ -211,17 +229,13 @@ void sendRequestThroughDataConnection(char **dataPortHost, int dataPortNumber, c
 	dataPortAddress.sin_family = AF_INET; 							// Create a network-capable socket
 	dataPortAddress.sin_port = htons(dataPortNumber); 				// Store the port number
 	serverHostInfo = gethostbyname(*dataPortHost);						            //ip is localhost - WILL HAVE TO CHANGE!
-	//serverHostInfo = gethostbyname("localhost");						            //ip is localhost - WILL HAVE TO CHANGE!
 	if (serverHostInfo == NULL) { 
-		//DO SOMETHING HERE IF CONNECTION FAILS?
 		fprintf(stderr, "CLIENT: ERROR, no such host\n"); 
 	}
 	memcpy((char*)&dataPortAddress.sin_addr.s_addr, (char*)serverHostInfo->h_addr, serverHostInfo->h_length); // Copy in the address
 
 	//set up data port socket
 	setUpSocket(&dataSocketFD);
-
-	printf("connecting to data port...\n");
 
 	// Connect to client through data port
 	connectToServer(&dataSocketFD, dataPortAddress);
@@ -233,13 +247,10 @@ void sendRequestThroughDataConnection(char **dataPortHost, int dataPortNumber, c
 	checkForCompletion(charsWritten, dataBuffer);
 
 	close(dataSocketFD);	//close data connection
-
-	//close(listenSocketFD); // Close the listening socket
 }
 
 void handleRequest(char *buffer, int establishedConnectionFD){
 	char temp[256];
-	//char dataBuffer[256];
 	char filepath[100];
 	char cwd[100];
 	char *controlConnectionCommand;
@@ -270,7 +281,6 @@ void handleRequest(char *buffer, int establishedConnectionFD){
 		if (validCommandRecieved == 1){							//valid -l command
 			//parse out the other arguments from the message
 			parseGetListTokens(buffer, &dataPortNumber, &dataPortHost);
-			printf("data port is: %d\n", dataPortNumber);
 			response = "1\n";
 
 			//send response back to client
@@ -279,11 +289,7 @@ void handleRequest(char *buffer, int establishedConnectionFD){
 			//check for completion
 			if (charsRead < 0) {
 				printf("ERROR writing to socket\n");
-				//break; MAYBE REPLACE WITH A RETURN STATEMENT
 			}
-			//else{
-			//	break;
-			//}
 
 			char listItem[256];							//will hold the current list item
 			char tempBuffer[256];						//will hold the last contents of dataBuffer
@@ -308,14 +314,12 @@ void handleRequest(char *buffer, int establishedConnectionFD){
 		else if (validCommandRecieved == 2){					//valid -g command
 			//parse out the other arguments from the message
 			parseGetFileTokens(buffer, &filename, &dataPortNumber, &dataPortHost);
-			//response = "1\n";				//okay response
 
+			//get current working directory
 			getcwd(cwd, sizeof(cwd));
-			printf("current working directory is: %s\n", cwd);
 
+			//concantenate filename and filepath
 			sprintf(filepath, ".%s/%s", cwd, filename);
-
-			printf("full file path: %s\n", filepath);
 
 			//open file for reading
 			textFP = fopen(filename, "r");
@@ -335,11 +339,6 @@ void handleRequest(char *buffer, int establishedConnectionFD){
 				fseek(textFP, 0, SEEK_END);
 				textFileSize = ftell(textFP);
 				fseek(textFP, 0, SEEK_SET);
-				printf("File length: %d\n", textFileSize);
-
-				//snprintf(response, 3, "%d", textFileSize);
-
-				//charsRead = sendMessage(&establishedConnectionFD, charsRead, response);
 
 				//create an array large enough to hold the file and fill it with 0's
 				char dataBuffer[textFileSize];
@@ -361,7 +360,6 @@ void handleRequest(char *buffer, int establishedConnectionFD){
 				//check for completion
 				if (charsRead < 0) {
 					printf("ERROR writing to socket\n");
-					//break; MAYBE REPLACE WITH A RETURN STATEMENT
 				}
 			}			
 		}	
@@ -376,9 +374,6 @@ void handleRequest(char *buffer, int establishedConnectionFD){
 		if (charsRead < 0) {
 			printf("ERROR writing to socket\n");
 		}
-		//else{
-		//	break;
-		//} MAYBE REPLACE WITH A RETURN STATEMENT
 }
 
 /********************************************************
@@ -407,14 +402,14 @@ void startup(int *listenSocketFD, struct sockaddr_in serverAddress, int portNumb
 
 int main(int argc, char *argv[])
 {
-	int listenSocketFD;
-	int dataSocketFD;
-	int establishedConnectionFD; 
-	int portNumber;
-	int charsWritten;
-	int textFileSize;						//size of the open text file
+	int listenSocketFD;									//control connection socket
+	int dataSocketFD;									//data connection socket
+	int establishedConnectionFD; 						//connection socket
+	int portNumber;										//control connection port number
+	int charsWritten;									//number of chars written in message
+	int textFileSize;									//size of the open text file
 	socklen_t sizeOfClientInfo;
-	char buffer[256];
+	char buffer[256];									//
 	struct sockaddr_in serverAddress, clientAddress;	//control connection structs
 
 	//data connection structs
@@ -464,11 +459,6 @@ int main(int argc, char *argv[])
 		//do something with the request
 		handleRequest(buffer, establishedConnectionFD);
 	}
-
-	//close(establishedConnectionFD); // Close the existing socket which is connected to the client
-
-	//wait a moment for the client to begin listening on the data port
-	//sleep(10);
 
 return 0;
 }
